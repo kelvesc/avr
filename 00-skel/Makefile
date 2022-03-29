@@ -1,33 +1,78 @@
 #-------- MAKE FILE ------------#
 
 # based on: https://electronics.stackexchange.com/a/66163
-# more info in:
-# 	- man 1 avr-objcopy
-# 	- man 1 avr-objdump
-# 	- man 1 avrdude
+# more info in: man 1 {avr-objcopy, avr-objdump, avrdude}
 
 MCU=atmega328
 MCU2=m328
 F_CPU=16000000UL
 
+INCLDIRS=. ./include/ ../include/
+LIBSDIR=. ./libs/ ../libs/
+
 CC=avr-gcc
 
-CFLAGS=-g -std=c11 -mmcu=${MCU} -DF_CPU=${F_CPU} -I.\
-       -Wall -Os -Wextra
+DEBUG=-g	# debug flag
+OPT=-Os		# optimize for size
+DEPFLAGS=-MP -MD
+
+CFLAGS=-std=c11 -Wall -Wextra ${OPT} \
+       $(foreach D, $(INCLDIRS), -I$(D)) \
+       -mmcu=${MCU} -DF_CPU=${F_CPU} \
+       $(DEPFLAGS) ${DEBUG}
+
+CFILES=$(foreach D, $(LIBSDIR), $(wildcard $(D)/*.c))
+OBJS=$(patsubst %.c,%.o,$(CFILES))
+DEPFILES=$(patsubst %.c,%.d,$(CFILES))
 
 OBJCOPY=avr-objcopy
 
 OBJDUMP=avr-objdump
 
-FLASHER=avrdude
-
-PROGRAMMER=arduino
-
-FFLAGS=-p ${MCU} -c ${PROGRAMMER} -b 57600 -F
-
+PROG=arduino
 PORT=/dev/ttyUSB0
 
+FLASHER=avrdude
+
+FFLAGS=-p ${MCU} -c ${PROG} -b 57600 -F
+
 SRC=main
+
+# $@ is the target
+# $^ is the dependency
+# $*.c evaluates to the current *.c file
+
+all: ${SRC}.hex
+
+flash: ${SRC}.hex
+	${FLASHER} ${FFLAGS} -U flash:w:${SRC}.hex:i -P ${PORT}
+
+%.hex: $(OBJS)
+	${OBJCOPY} -j .text -j .data -O ihex $^ $@
+
+%.elf: %.o
+	${OBJCOPY} -j .text -j .data -O binary $^ $@
+
+%.o: %.c
+	${CC} ${CFLAGS} -o $@ $^
+
+debug: ${SRC}.asm
+
+%.asm: %.c
+	${CC} ${CFLAGS} -c -o ${SRC}.s $^
+	${OBJDUMP} -m avr -S ${SRC}.s > $@
+	@rm $(SRC).s
+
+fulldump:
+	${CC} ${CFLAGS} -c -Wa,-ahlsm,-L -o ${SRC}.s ${SRC}.c
+	${OBJDUMP} -m avr -d ${SRC}.s > ${SRC}.asm
+	@rm $(SRC).s
+
+clean:
+	@rm -f $(DEPFILES) $(OBJS) *.hex *.elf *.asm
+	@date
+	@echo 'removed all .o .elf .hex .asm files'
+
 
 help:
 	@echo ''
@@ -46,42 +91,10 @@ help:
 	@echo 'help	display this message'
 	@echo ''
 
-edit:
-	nvim ${SRC}.c
+env:
+	echo "$(INCLDIRS)"
+	echo "$(CFILES)"
+	echo "$(OBJS)"
+	echo "$(DEPFILES)"
 
-makefile:
-	nvim Makefile
-
-clean:
-	@rm -f *.o *.hex *.elf *.i *.s *.asm
-	@date
-	@echo 'removed all .o .i .s .elf .hex .asm files'
-
-preprocess:
-	${CC} ${CFLAGS} -E -o ${SRC}.i ${SRC}.c
-
-object:
-	${CC} ${CFLAGS} -o ${SRC}.o ${SRC}.c
-
-elf: object
-	${OBJCOPY} -j .text -j .data -O binary ${SRC}.o ${SRC}.elf
-
-hex: object
-	${OBJCOPY} -j .text -j .data -O ihex ${SRC}.o ${SRC}.hex
-
-dump:
-	${CC} ${CFLAGS} -c -o ${SRC}.s ${SRC}.c
-	${OBJDUMP} -m avr -S ${SRC}.s > ${SRC}.asm
-	#${OBJDUMP} -m avr -d ${SRC}.s > ${SRC}.asm
-	#@rm -f *.temp.s
-
-fulldump:
-	${CC} ${CFLAGS} -c -Wa,-ahlsm,-L -o ${SRC}.s ${SRC}.c
-	${OBJDUMP} -m avr -d ${SRC}.s > ${SRC}.asm
-	#@rm -f *.temp.s
-
-all: elf hex dump
-
-flash: hex
-	${FLASHER} ${FFLAGS} -U flash:w:${SRC}.hex:i -P ${PORT}
-
+-include $(DEPFILES)
