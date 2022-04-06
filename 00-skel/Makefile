@@ -19,7 +19,7 @@ DEPFLAGS=-MP -MD
 CFLAGS=-std=c11 -Wall -Wextra ${OPT} \
        $(foreach D, $(INCLDIRS), -I$(D)) \
        -mmcu=${MCU} -DF_CPU=${F_CPU} \
-       $(DEPFLAGS) ${DEBUG}
+       ${DEBUG}
 
 CFILES=$(foreach D, $(LIBSDIR), $(wildcard $(D)/*.c))
 OBJS=$(patsubst %.c,%.o,$(CFILES))
